@@ -327,7 +327,7 @@ func Completions(r *ghttp.Request) {
 		newMessages += message.Content + "\n"
 	}
 	// g.Dump(newMessages)
-	g.Log().Info(ctx, "model", req.Model)
+	//g.Log().Info(ctx, "model", req.Model)
 	var ChatReq *gjson.Json
 	if gstr.HasPrefix(req.Model, "gpt-4") {
 		ChatReq = gjson.New(Chat4ReqStr)
@@ -403,7 +403,7 @@ func Completions(r *ghttp.Request) {
 		}()
 		if email == "" {
 			emailPop, ok := config.PlusSet.Pop()
-			g.Log().Info(ctx, emailPop, ok)
+			//g.Log().Info(ctx, emailPop, ok)
 			//g.Dump(config.PlusSet)
 			if !ok {
 				g.Dump(config.PlusSet)
@@ -446,7 +446,8 @@ func Completions(r *ghttp.Request) {
 		return
 	}
 	realModel := ChatReq.Get("model").String()
-	g.Log().Info(ctx, userToken, "使用", email, req.Model, "->", realModel, "发起会话")
+	//g.Log().Info(ctx, userToken, "使用", email, req.Model, "->", realModel, "发起会话")
+	g.Log().Info(ctx, email, "发起会话", req.Model, "->", realModel)
 
 	// 使用email获取 accessToken
 	var sessionCache *config.CacheSession
@@ -517,9 +518,10 @@ func Completions(r *ghttp.Request) {
 	}
 	// 如果返回结果不是200
 	if resp.StatusCode != 200 {
-		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode)
+		allString := resp.ReadAllString()
+		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode, gstr.SubStr(gstr.Replace(allString, "\n", "="), 0, 50))
 		r.Response.Status = resp.StatusCode
-		r.Response.WriteJson(gjson.New(resp.ReadAllString()))
+		r.Response.WriteJson(gjson.New(allString))
 		return
 	}
 	// if resp.Header.Get("Content-Type") != "text/event-stream; charset=utf-8" && resp.Header.Get("Content-Type") != "text/event-stream" {
@@ -655,7 +657,8 @@ func Completions(r *ghttp.Request) {
 			isPlusInvalid = true
 			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "PLUS失效")
 		} else {
-			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "完成会话")
+			//g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "完成会话")
+			g.Log().Info(ctx, email, "完成会话", realModel, "->", modelSlug)
 		}
 
 	} else {

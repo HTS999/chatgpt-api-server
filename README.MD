@@ -10,6 +10,9 @@
 ```shell
 go install github.com/gogf/gf/cmd/gf/v2@latest 
 ```
+- 提交docker 账号是用 hts999 
+- 开发机上 都先要 `docker logout` 再 `docker login`
+
 ## 环境变量
 
 ```yaml
