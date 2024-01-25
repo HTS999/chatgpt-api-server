@@ -403,7 +403,9 @@ func Completions(r *ghttp.Request) {
 		if email == "" {
 			emailPop, ok := config.PlusSet.Pop()
 			g.Log().Info(ctx, emailPop, ok)
+			g.Dump(config.PlusSet)
 			if !ok {
+				g.Dump(config.PlusSet)
 				g.Log().Error(ctx, "Get email from set error")
 				r.Response.Status = 500
 				r.Response.WriteJson(g.Map{
