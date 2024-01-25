@@ -88,6 +88,37 @@ var (
 			"kind": "primary_assistant"
 		}
 	}`
+	Chat4ReqGizmo = `
+	{
+		"action": "next",
+		"messages": [
+			{
+				"id": "aaa29c6e-0b9a-4992-acdf-14658caf65ab",
+				"author": {
+					"role": "user"
+				},
+				"content": {
+					"content_type": "text",
+					"parts": [
+						"你是谁？"
+					]
+				},
+				"metadata": {}
+			}
+		],
+		"parent_message_id": "aaa1fc87-cdd0-41dc-92df-3230c63b4d7a",
+		"model": "gpt-4-gizmo",
+		"timezone_offset_min": -480,
+		"suggestions": [],
+		"history_and_training_disabled": false,
+		"conversation_mode": {
+			"kind": "gizmo_interaction",
+			"gizmo_id": "g-YyyyMT9XH"
+		},
+		"force_paragen": false,
+		"force_rate_limit": false
+	}
+	`
 	Chat4ReqStr = `
 	{
 		"action": "next",
@@ -224,6 +255,15 @@ var (
 )
 
 func Completions(r *ghttp.Request) {
+
+	corsOptions := r.Response.DefaultCORSOptions()
+	corsOptions.AllowDomain = []string{"*"}
+	corsOptions.AllowHeaders = "*"
+	corsOptions.AllowCredentials = "true"
+	corsOptions.AllowMethods = "*"
+	corsOptions.MaxAge = 3601
+	r.Response.CORS(corsOptions)
+
 	ctx := r.Context()
 	// g.Log().Debug(ctx, "Conversation start....................")
 	if config.MAXTIME > 0 {
@@ -287,6 +327,7 @@ func Completions(r *ghttp.Request) {
 		newMessages += message.Content + "\n"
 	}
 	// g.Dump(newMessages)
+	g.Log().Info(ctx, "model", req.Model)
 	var ChatReq *gjson.Json
 	if gstr.HasPrefix(req.Model, "gpt-4") {
 		ChatReq = gjson.New(Chat4ReqStr)
@@ -297,6 +338,13 @@ func Completions(r *ghttp.Request) {
 	if gstr.HasPrefix(req.Model, "gpt-4-turbo") {
 		ChatReq = gjson.New(ChatTurboReqStr)
 	}
+	if gstr.HasPrefix(req.Model, "gpt-4-gizmo-") {
+		ChatReq = gjson.New(Chat4ReqGizmo)
+		//ChatReq.Set("conversation_mode.gizmo.gizmo.id", gstr.Replace(req.Model, "gpt-4-gizmo-", ""))
+		ChatReq.Set("conversation_mode.gizmo_id", gstr.Replace(req.Model, "gpt-4-gizmo-", ""))
+		g.Log().Info(ctx, "gizmo", gstr.Replace(req.Model, "gpt-4-gizmo-", ""))
+	}
+	//
 
 	if req.Model == "gpt-4-mobile" {
 		ChatReq = gjson.New(ChatReqStr)
@@ -417,12 +465,13 @@ func Completions(r *ghttp.Request) {
 	ChatReq.Set("messages.0.content.parts.0", newMessages)
 	ChatReq.Set("messages.0.id", uuid.NewString())
 	ChatReq.Set("parent_message_id", uuid.NewString())
+
 	if len(req.PluginIds) > 0 {
 		ChatReq.Set("plugin_ids", req.PluginIds)
 	}
 	ChatReq.Set("history_and_training_disabled", true)
 
-	// ChatReq.Dump()
+	//ChatReq.Dump()
 	// 请求openai
 	resp, err := g.Client().SetHeaderMap(g.MapStrStr{
 		"Authorization": "Bearer " + accessToken,
@@ -452,12 +501,14 @@ func Completions(r *ghttp.Request) {
 		if clears_in > 0 {
 			g.Log().Error(ctx, email, "resp.StatusCode==430", resStr)
 
-			r.Response.WriteStatusExit(430, resStr)
+			//r.Response.WriteStatusExit(430, resStr)
+			r.Response.WriteStatusExit(430, `{ "detail": "try again" ,"StatusCode":430 }`)
 			return
 		} else {
 			g.Log().Error(ctx, email, "resp.StatusCode==429", resStr)
 
-			r.Response.WriteStatusExit(429, resStr)
+			//r.Response.WriteStatusExit(429, resStr)
+			r.Response.WriteStatusExit(429, `{ "detail": "try again" ,"StatusCode":429 }`)
 			return
 		}
 	}
@@ -474,14 +525,13 @@ func Completions(r *ghttp.Request) {
 	// 	r.Response.WriteJson(gjson.New(`{"detail": "internal server error"}`))
 	// 	return
 	// }
-
 	// 流式返回
 	if req.Stream {
 		r.Response.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 		r.Response.Header().Set("Cache-Control", "no-cache")
 		r.Response.Header().Set("Connection", "keep-alive")
 		modelSlug := ""
-
+		codeMsg := ""
 		message := ""
 		decoder := eventsource.NewDecoder(resp.Body)
 		defer decoder.Decode()
@@ -516,12 +566,50 @@ func Completions(r *ghttp.Request) {
 			}
 			// gjson.New(text).Dump()
 			role := gjson.New(text).Get("message.author.role").String()
+			if role == "tool" {
+				//code 结束的地方
+				if codeMsg != "" {
+					toStream(ctx, id, "\n```\n", req, r)
+					codeMsg = ""
+				}
+				toolStr := myFileTool(ctx, text, accessToken)
+				if toolStr != "" {
+					toStream(ctx, id, "\n"+toolStr+"\n", req, r)
+				}
+			}
 			if role == "assistant" {
 				messageTemp := gjson.New(text).Get("message.content.parts.0").String()
 				model_slug := gjson.New(text).Get("message.metadata.model_slug").String()
 				if model_slug != "" {
 					modelSlug = model_slug
 				}
+
+				if messageTemp == "" {
+					g.Log().Debug(ctx, "mygod: ", text)
+					//codeMsg
+					msgCode2 := gjson.New(text).Get("message.content.text").String()
+					if msgCode2 != "" {
+						//开始的的第三
+						if codeMsg == "" {
+							//
+							language := gjson.New(text).Get("message.content.language").String()
+							if language == "unknown" {
+								language = ""
+							}
+							toStream(ctx, id, "\n```"+language+"\n", req, r)
+						}
+						content := strings.Replace(msgCode2, codeMsg, "", 1)
+						toStream(ctx, id, content, req, r)
+						codeMsg = msgCode2
+						continue
+					}
+				}
+				//code 结束的地方
+				if codeMsg != "" {
+					toStream(ctx, id, "\n```\n", req, r)
+					codeMsg = ""
+				}
+
 				// g.Log().Debug(ctx, "messageTemp: ", messageTemp)
 				// 如果 messageTemp 不包含 message 且plugin_ids为空
 				if !gstr.Contains(messageTemp, message) && len(req.PluginIds) == 0 {
@@ -532,6 +620,7 @@ func Completions(r *ghttp.Request) {
 				if content == "" {
 					continue
 				}
+
 				message = messageTemp
 				apiResp := gjson.New(ApiRespStrStream)
 				apiResp.Set("id", id)
@@ -570,6 +659,8 @@ func Completions(r *ghttp.Request) {
 		// 非流式回应
 		modelSlug := ""
 		content := ""
+		msgCode := ""
+		msgTool := ""
 		decoder := eventsource.NewDecoder(resp.Body)
 		defer decoder.Decode()
 
@@ -585,6 +676,7 @@ func Completions(r *ghttp.Request) {
 			if text == "" {
 				continue
 			}
+			//g.Log().Info(ctx, "text: ", text)
 			if text == "[DONE]" {
 				resp.Close()
 				break
@@ -597,11 +689,38 @@ func Completions(r *ghttp.Request) {
 					modelSlug = model_slug
 				}
 				message := gjson.New(text).Get("message.content.parts.0").String()
+				msgCode2 := gjson.New(text).Get("message.content.text").String()
 				if message != "" {
 					content = message
+					g.Log().Debug(ctx, "message: ", modelSlug, content)
+				} else if msgCode2 != "" {
+					msgCode = msgCode2
+					g.Log().Debug(ctx, "msgCode: ", modelSlug, msgCode)
+					// } else {
+					// 	g.Log().Error(ctx, "可能: ", text)
 				}
+
+			} else if role == "tool" {
+				g.Log().Debug(ctx, "tool: ", role, text)
+				toolStr := myFileTool(ctx, text, accessToken)
+				if toolStr != "" {
+					msgTool = toolStr
+				}
+			} else {
+				g.Log().Debug(ctx, "role2: ", role, text)
 			}
 		}
+		g.Log().Debug(ctx, "最后 msgCode:", msgCode)
+		g.Log().Debug(ctx, "最后 msgTool:", msgTool)
+		g.Log().Debug(ctx, "最后 content:", content)
+		allContent := ""
+		if msgCode != "" {
+			allContent += "\n```\n" + msgCode + "\n```\n"
+		}
+		if msgTool != "" {
+			allContent += "\n" + msgTool + "\n"
+		}
+		content = allContent + content
 		completionTokens := CountTokens(content)
 		promptTokens := CountTokens(newMessages)
 		totalTokens := completionTokens + promptTokens
