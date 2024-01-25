@@ -6,7 +6,10 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=master&repo=747643293)
 
-
+## gf工具安装
+```shell
+go install github.com/gogf/gf/cmd/gf/v2@latest 
+```
 ## 环境变量
 
 ```yaml

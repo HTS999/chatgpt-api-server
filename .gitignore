@@ -18,6 +18,7 @@ cool-tools
 output/
 manifest/output/
 temp/
+linux_amd64/
 data/db.sqlite
 logs/
 public/uploads/
