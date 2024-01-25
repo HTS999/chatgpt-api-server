@@ -4,6 +4,9 @@
 
 快速部署脚本：[ChatGPT-API-SERVER-Deploy](https://github.com/xyhelper/chatgpt-api-server-deploy/)。
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=530035709)
+
+
 ## 环境变量
 
 ```yaml
