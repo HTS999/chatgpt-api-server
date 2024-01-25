@@ -750,7 +750,7 @@ func Completions(r *ghttp.Request) {
 
 			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "PLUS失效")
 		} else {
-			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "完成会话")
+			g.Log().Info(ctx, "[非流]完成会话", email, realModel, "->", modelSlug)
 		}
 	}
 
