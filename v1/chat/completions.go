@@ -335,7 +335,8 @@ func Completions(r *ghttp.Request) {
 		ChatReq = gjson.New(ChatReqStr)
 	}
 
-	if gstr.HasPrefix(req.Model, "gpt-4-turbo") {
+	if gstr.HasPrefix(req.Model, "gpt-4-all") {
+		//if gstr.HasPrefix(req.Model, "gpt-4-turbo") {
 		ChatReq = gjson.New(ChatTurboReqStr)
 	}
 	if gstr.HasPrefix(req.Model, "gpt-4-gizmo-") {
@@ -403,7 +404,7 @@ func Completions(r *ghttp.Request) {
 		if email == "" {
 			emailPop, ok := config.PlusSet.Pop()
 			g.Log().Info(ctx, emailPop, ok)
-			g.Dump(config.PlusSet)
+			//g.Dump(config.PlusSet)
 			if !ok {
 				g.Dump(config.PlusSet)
 				g.Log().Error(ctx, "Get email from set error")
