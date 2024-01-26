@@ -519,9 +519,20 @@ func Completions(r *ghttp.Request) {
 	// 如果返回结果不是200
 	if resp.StatusCode != 200 {
 		allString := resp.ReadAllString()
-		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode, gstr.SubStr(gstr.Replace(allString, "\n", "="), 0, 50))
+		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode, gstr.SubStr(gstr.Replace(allString, "\n", "="), 0, 100))
 		r.Response.Status = resp.StatusCode
-		r.Response.WriteJson(gjson.New(allString))
+		aJson := gjson.New(allString)
+		msg := "请求发生错误！ 请重试"
+		if resp.StatusCode == 404 {
+			msg = "未找到这个模型"
+		}
+		aJson.Set("error", msg)
+		aJson.Set("StatusCode", resp.StatusCode)
+		if gstr.HasPrefix(aJson.Get("detail").String(), "help") {
+			aJson.Set("detail", "")
+		}
+		r.Response.WriteJsonExit(aJson)
+		//r.Response.WriteJson(gjson.New(allString))
 		return
 	}
 	// if resp.Header.Get("Content-Type") != "text/event-stream; charset=utf-8" && resp.Header.Get("Content-Type") != "text/event-stream" {
