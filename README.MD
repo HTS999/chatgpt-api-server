@@ -12,6 +12,7 @@ go install github.com/gogf/gf/cmd/gf/v2@latest
 ```
 - 提交docker 账号是用 hts999 
 - 开发机上 都先要 `docker logout` 再 `docker login`
+- 这边代码布置的前端不能用 可能要到作者的前端里面copy出来
 
 ## 环境变量
 
