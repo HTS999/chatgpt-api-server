@@ -11,5 +11,6 @@ func init() {
 	v1Group := s.Group("/v1")
 	v1Group.ALL("/chat/completions", chat.Completions)
 	v1Group.ALL("/chat/gpt4v", chat.Gpt4v)
+	v1Group.ALL("/chat/gpt4vdebug", chat.Gpt4vdebug)
 	v1Group.ALL("/chat/gpt4v-mobile", chat.Gpt4v)
 }

@@ -15,6 +15,14 @@ func CHATPROXY(ctx g.Ctx) string {
 	return g.Cfg().MustGetWithEnv(ctx, "CHATPROXY").String()
 }
 
+func PLUSN(ctx g.Ctx) int {
+	ab := g.Cfg().MustGetWithEnv(ctx, "PLUSN").Int()
+	if ab <= 0 {
+		return 1
+	}
+	return ab
+}
+
 func AUTHKEY(ctx g.Ctx) string {
 	// g.Log().Debug(ctx, "config.AUTHKEY", g.Cfg().MustGetWithEnv(ctx, "AUTHKEY").String())
 	return g.Cfg().MustGetWithEnv(ctx, "AUTHKEY").String()

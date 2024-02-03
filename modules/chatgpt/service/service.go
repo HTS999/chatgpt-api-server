@@ -12,6 +12,7 @@ import (
 	"github.com/gogf/gf/v2/os/gcron"
 	"github.com/gogf/gf/v2/os/gctx"
 	"github.com/gogf/gf/v2/text/gstr"
+	"github.com/gogf/gf/v2/util/gconv"
 )
 
 func init() {
@@ -31,6 +32,7 @@ func AddAllSession(ctx g.Ctx) {
 		g.Log().Error(ctx, "AddAllSession", err)
 		return
 	}
+	var arr []string
 	for _, v := range record {
 		email := v["email"].String()
 		password := v["password"].String()
@@ -110,8 +112,13 @@ func AddAllSession(ctx g.Ctx) {
 
 		// 添加到set
 		if isPlus == 1 {
+			// for i := 0; i < config.PLUSN(ctx); i++ { //一个号重复添加
+			// 	config.PlusSet.Add("[" + gconv.String(i) + "]" + email)
+			// 	config.NormalSet.Remove(email)
+			// }
 			config.PlusSet.Add(email)
 			config.NormalSet.Remove(email)
+			arr = append(arr, email)
 
 		} else {
 			config.NormalSet.Add(email)
@@ -120,6 +127,14 @@ func AddAllSession(ctx g.Ctx) {
 		}
 	}
 
-	g.Log().Info(ctx, "AddSession finish", "plusSet", config.PlusSet.Size(), "normalSet", config.NormalSet.Size())
+	//重复添加 email
+	for i := 0; i < config.PLUSN(ctx); i++ {
+		for _, email := range arr {
+			config.PlusSet.Add("[" + gconv.String(i) + "]" + email)
+		}
+	}
+	//g.Dump(config.PlusSet)
+
+	g.Log().Info(ctx, "AddSession finish", "plusSet2", config.PlusSet.Size(), "normalSet", config.NormalSet.Size())
 
 }

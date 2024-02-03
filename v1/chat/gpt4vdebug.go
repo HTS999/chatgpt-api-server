@@ -6,8 +6,8 @@ import (
 	"chatgpt-api-server/config"
 	"chatgpt-api-server/modules/chatgpt/model"
 	"chatgpt-api-server/utility"
+	"context"
 	"fmt"
-	"image"
 	"io"
 	"net/http"
 	"strings"
@@ -30,7 +30,7 @@ import (
 	"github.com/launchdarkly/eventsource"
 )
 
-func Gpt4v(r *ghttp.Request) {
+func Gpt4vdebug(r *ghttp.Request) {
 	ctx := r.Context()
 	// model := "gpt-4"
 	reqModel := "gpt-4"
@@ -163,15 +163,17 @@ func Gpt4v(r *ghttp.Request) {
 	}
 	stream := r.Get("stream").Bool()
 
-	// 获取上传的文件
-	files := r.GetUploadFiles("file")
-	if len(files) == 0 {
+	outputPath, fileType, err := downloadFile(ctx, "https://gptscopilot.ai/files/20240131/bni1sk5v.jpg")
+	var filenames []string
+	if err != nil {
 		r.Response.Status = 400
 		r.Response.WriteJsonExit(g.Map{
 			"code":   0,
-			"detail": "upload file is empty",
+			"detail": "upload file is empty " + outputPath + " downloadFile" + fileType,
 		})
 	}
+	filenames = append(filenames, outputPath)
+
 	// 检查 ./temp 目录是否存在 不在则创建
 	if !gfile.Exists("./temp") {
 		err := gfile.Mkdir("./temp")
@@ -183,18 +185,12 @@ func Gpt4v(r *ghttp.Request) {
 			})
 		}
 	}
-	filenames, err := files.Save("./temp", true)
-	if err != nil {
-		r.Response.Status = 400
-		r.Response.WriteJsonExit(g.Map{
-			"code":   0,
-			"detail": "upload file failed",
-		})
-	}
+
 	// 删除临时文件
 	defer func() {
 		for _, filename := range filenames {
 			gfile.Remove("./temp/" + filename)
+			//gfile.Remove(filename)
 		}
 	}()
 
@@ -249,7 +245,7 @@ func Gpt4v(r *ghttp.Request) {
 	ChatReq.Set("model", reqModel)
 	// ChatReq.Remove("plugin_ids")
 
-	// ChatReq.Dump()
+	ChatReq.Dump()
 	// 请求openai
 	resp, err := g.Client().SetHeaderMap(g.MapStrStr{
 		"Authorization": "Bearer " + accessToken,
@@ -439,85 +435,158 @@ func Gpt4v(r *ghttp.Request) {
 
 }
 
-func UploadAzure(ctx g.Ctx, filepath string, token string) (file_id string, download_url string, width int, height int, size_bytes int64, statusCode int, err error) {
-	// 检测文件是否存在
-	if !gfile.Exists(filepath) {
-		err = gerror.New("read file fail")
+// func UploadAzure(ctx g.Ctx, filepath string, token string) (file_id string, download_url string, width int, height int, size_bytes int64, statusCode int, err error) {
+// 	// 检测文件是否存在
+// 	if !gfile.Exists(filepath) {
+// 		err = gerror.New("read file fail")
+// 		return
+// 	}
+
+// 	fileName := gfile.Basename(filepath)
+// 	fileSize := gfile.Size(filepath)
+
+// 	// 获取上传地址 backend-api/files  POST
+// 	res, err := g.Client().SetHeader("Authorization", "Bearer "+token).ContentJson().Post(ctx, config.CHATPROXY(ctx)+"/backend-api/files", g.Map{
+// 		"file_name": fileName,
+// 		"file_size": fileSize,
+// 		"use_case":  "multimodal",
+// 	})
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer res.Close()
+// 	if res.StatusCode != 200 {
+// 		res.RawDump()
+// 		statusCode = res.StatusCode
+// 		err = gerror.New("get upload_url fail:" + res.Status)
+// 		return
+// 	}
+// 	//
+// 	resJson := gjson.New(res.ReadAllString())
+// 	// resJson.Dump()
+// 	upload_url := resJson.Get("upload_url").String()
+// 	file_id = resJson.Get("file_id").String()
+// 	if upload_url == "" {
+// 		err = gerror.New("get upload_url fail")
+// 		return
+// 	}
+// 	// 获取图片宽高
+// 	file, err := gfile.Open(filepath)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer file.Close()
+// 	// 获取图片宽高
+// 	img, _, err := image.DecodeConfig(file)
+// 	if err != nil {
+// 		return
+// 	}
+// 	width = img.Width
+// 	height = img.Height
+// 	size_bytes = fileSize
+
+// 	// 以二进制流的方式上传文件 PUT
+// 	filedata := gfile.GetBytes(filepath)
+
+// 	resput, err := g.Client().SetHeaderMap(g.MapStrStr{
+// 		"x-ms-blob-type": "BlockBlob",
+// 		"x-ms-version":   "2020-04-08",
+// 	}).Put(ctx, upload_url, filedata)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer resput.Close()
+// 	// resput.RawDump()
+// 	if resput.StatusCode != 201 {
+// 		err = gerror.New("upload file fail")
+// 		return
+// 	}
+// 	// 获取文件下载地址 backend-api/files/{file_id}/uploaded  POST
+// 	resdown, err := g.Client().SetHeader("Authorization", "Bearer "+token).ContentJson().Post(ctx, config.CHATPROXY(ctx)+"/backend-api/files/"+file_id+"/uploaded")
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer resdown.Close()
+// 	// resdown.RawDump()
+// 	download_url = gjson.New(resdown.ReadAllString()).Get("download_url").String()
+// 	if download_url == "" {
+// 		err = gerror.New("get download_url fail")
+// 		return
+// 	}
+
+// 	return
+// }
+
+func gpt4vReq(ctx context.Context, url string, accessToken string, message string) (ChatReq *gjson.Json, eos error) {
+
+	outputPath, fileType, err := downloadFile(ctx, url)
+	var filenames []string
+	if err != nil {
+		eos = gerror.New("fileType error:" + fileType)
 		return
+	}
+	filenames = append(filenames, outputPath)
+
+	// 检查 ./temp 目录是否存在 不在则创建
+	if !gfile.Exists("./temp") {
+		err := gfile.Mkdir("./temp")
+		if err != nil {
+			eos = gerror.New("create temp dir failed")
+			return
+		}
 	}
 
-	fileName := gfile.Basename(filepath)
-	fileSize := gfile.Size(filepath)
+	// 删除临时文件
+	defer func() {
+		for _, filename := range filenames {
+			gfile.Remove("./temp/" + filename)
+			//gfile.Remove(filename)
+		}
+	}()
 
-	// 获取上传地址 backend-api/files  POST
-	res, err := g.Client().SetHeader("Authorization", "Bearer "+token).ContentJson().Post(ctx, config.CHATPROXY(ctx)+"/backend-api/files", g.Map{
-		"file_name": fileName,
-		"file_size": fileSize,
-		"use_case":  "multimodal",
-	})
-	if err != nil {
-		return
-	}
-	defer res.Close()
-	if res.StatusCode != 200 {
-		res.RawDump()
-		statusCode = res.StatusCode
-		err = gerror.New("get upload_url fail:" + res.Status)
-		return
-	}
-	g.Log().Info(ctx, "上传图片", fileName)
-	//
-	resJson := gjson.New(res.ReadAllString())
-	// resJson.Dump()
-	upload_url := resJson.Get("upload_url").String()
-	file_id = resJson.Get("file_id").String()
-	if upload_url == "" {
-		err = gerror.New("get upload_url fail")
-		return
-	}
-	// 获取图片宽高
-	file, err := gfile.Open(filepath)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	// 获取图片宽高
-	img, _, err := image.DecodeConfig(file)
-	if err != nil {
-		return
-	}
-	width = img.Width
-	height = img.Height
-	size_bytes = fileSize
+	var file_ids []string
+	var download_urls []string
+	var widths []int
+	var heights []int
+	var size_bytess []int64
+	// 上传文件到azure
+	for _, filename := range filenames {
+		file_id, download_url, width, height, size_bytes, stateCode, err := UploadAzure(ctx, "./temp/"+filename, accessToken)
+		g.Log().Debug(ctx, "file", file_id)
+		if stateCode == 401 {
+			g.Log().Error(ctx, "token过期,需要重新获取token", err)
+			eos = gerror.New("accessToken is invalid,will be refresh")
+			return
+		}
 
-	// 以二进制流的方式上传文件 PUT
-	filedata := gfile.GetBytes(filepath)
-
-	resput, err := g.Client().SetHeaderMap(g.MapStrStr{
-		"x-ms-blob-type": "BlockBlob",
-		"x-ms-version":   "2020-04-08",
-	}).Put(ctx, upload_url, filedata)
-	if err != nil {
-		return
+		// if err != nil {
+		// 	g.Log().Error(ctx, err)
+		// 	r.Response.Status = 400
+		// 	r.Response.WriteJsonExit(g.Map{
+		// 		"code":   0,
+		// 		"detail": err.Error(),
+		// 	})
+		// }
+		file_ids = append(file_ids, file_id)
+		download_urls = append(download_urls, download_url)
+		widths = append(widths, width)
+		heights = append(heights, height)
+		size_bytess = append(size_bytess, size_bytes)
 	}
-	defer resput.Close()
-	// resput.RawDump()
-	if resput.StatusCode != 201 {
-		err = gerror.New("upload file fail")
-		return
+	// g.Dump(file_ids)
+	// g.Dump(download_urls)
+	ChatReq = gjson.New(ChatReqStr)
+	for i, file_id := range file_ids {
+		ChatReq.Set("messages.0.content.parts."+gconv.String(i)+".asset_pointer", "file-service://"+file_id)
+		ChatReq.Set("messages.0.content.parts."+gconv.String(i)+".height", heights[i])
+		ChatReq.Set("messages.0.content.parts."+gconv.String(i)+".width", widths[i])
+		ChatReq.Set("messages.0.content.parts."+gconv.String(i)+".size_bytes", size_bytess[i])
 	}
-	// 获取文件下载地址 backend-api/files/{file_id}/uploaded  POST
-	resdown, err := g.Client().SetHeader("Authorization", "Bearer "+token).ContentJson().Post(ctx, config.CHATPROXY(ctx)+"/backend-api/files/"+file_id+"/uploaded")
-	if err != nil {
-		return
-	}
-	defer resdown.Close()
-	// resdown.RawDump()
-	download_url = gjson.New(resdown.ReadAllString()).Get("download_url").String()
-	if download_url == "" {
-		err = gerror.New("get download_url fail")
-		return
-	}
-
+	// messages.0.content.content_type multimodal_text
+	ChatReq.Set("messages.0.content.content_type", "multimodal_text")
+	ChatReq.Set("messages.0.content.parts."+gconv.String(len(file_ids)), message)
+	ChatReq.Set("messages.0.id", uuid.NewString())
+	ChatReq.Set("parent_message_id", uuid.NewString())
+	ChatReq.Set("model", "gpt-4")
 	return
 }

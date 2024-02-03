@@ -14,10 +14,13 @@ import (
 	"time"
 
 	"github.com/cool-team-official/cool-admin-go/cool"
+	"github.com/gogf/gf/text/gregex"
 	"github.com/gogf/gf/v2/database/gdb"
 	"github.com/gogf/gf/v2/encoding/gjson"
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
+	"github.com/gogf/gf/v2/os/gfile"
 	"github.com/gogf/gf/v2/text/gstr"
 	"github.com/gogf/gf/v2/util/gconv"
 	"github.com/google/uuid"
@@ -278,9 +281,10 @@ func Completions(r *ghttp.Request) {
 	// 如果 Authorization 为空，返回 401
 	if userToken == "" {
 		r.Response.Status = 401
-		r.Response.WriteJson(g.Map{
-			"detail": "Authentication credentials were not provided.",
-		})
+		// r.Response.WriteJson(g.Map{
+		// 	"detail": "Authentication credentials were not provided.",
+		// })
+		r.Response.WriteJson(gApiError("somethine wrong with api-key", gerror.New("openai_hk_error")))
 	}
 	isPlusUser := false
 	if !config.ISFREE(ctx) {
@@ -292,17 +296,19 @@ func Completions(r *ghttp.Request) {
 		if err != nil {
 			g.Log().Error(ctx, err)
 			r.Response.Status = 500
-			r.Response.WriteJson(g.Map{
-				"detail": err.Error(),
-			})
+			// r.Response.WriteJson(g.Map{
+			// 	"detail": err.Error(),
+			// })
+			r.Response.WriteJson(gApiError("somethine wrong with api-key", err))
 			return
 		}
 		if userRecord.IsEmpty() {
 			g.Log().Error(ctx, "userToken not found")
 			r.Response.Status = 401
-			r.Response.WriteJson(g.Map{
-				"detail": "userToken not found",
-			})
+			// r.Response.WriteJson(g.Map{
+			// 	"detail": "userToken not found",
+			// })
+			r.Response.WriteJson(gApiError("somethine wrong with api-key", gerror.New("openai_hk_error")))
 			return
 		}
 		if userRecord["isPlus"].Int() == 1 {
@@ -338,6 +344,7 @@ func Completions(r *ghttp.Request) {
 	if gstr.HasPrefix(req.Model, "gpt-4-all") {
 		//if gstr.HasPrefix(req.Model, "gpt-4-turbo") {
 		ChatReq = gjson.New(ChatTurboReqStr)
+
 	}
 	if gstr.HasPrefix(req.Model, "gpt-4-gizmo-") {
 		ChatReq = gjson.New(Chat4ReqGizmo)
@@ -355,13 +362,16 @@ func Completions(r *ghttp.Request) {
 	// 如果不是plus用户但是使用了plus模型
 	if !isPlusUser && gstr.HasPrefix(req.Model, "gpt-4") {
 		r.Response.Status = 501
-		r.Response.WriteJson(g.Map{
-			"detail": "plus user only",
-		})
+		// r.Response.WriteJson(g.Map{
+		// 	"detail": "plus user only",
+		// })
+		r.Response.WriteJson(gApiError("You can use only model gpt-3.5", gerror.New("openai_hk_error")))
 		return
 	}
 	email := ""
+	emailPop2 := ""
 	clears_in := 0
+	icount := 0
 	// plus失效
 	isPlusInvalid := false
 	// 是否归还
@@ -388,7 +398,8 @@ func Completions(r *ghttp.Request) {
 							"isPlus": 0,
 						})
 						// 从set中删除
-						config.PlusSet.Remove(email)
+						//config.PlusSet.Remove(email)
+						config.PlusSet.Remove(emailPop2)
 						// 添加到set
 						config.NormalSet.Add(email)
 						return
@@ -397,7 +408,10 @@ func Completions(r *ghttp.Request) {
 						// 延迟归还
 						time.Sleep(time.Duration(clears_in) * time.Second)
 					}
-					config.PlusSet.Add(email)
+					//config.PlusSet.Add(email)
+					config.PlusSet.Add(emailPop2)
+					g.Log().Info(ctx, "归还 ", email, emailPop2)
+
 				}
 			}()
 		}()
@@ -409,22 +423,31 @@ func Completions(r *ghttp.Request) {
 				g.Dump(config.PlusSet)
 				g.Log().Error(ctx, "Get email from set error")
 				r.Response.Status = 500
-				r.Response.WriteJson(g.Map{
-					"detail": "Server is busy, please try again later",
-				})
+				// r.Response.WriteJson(g.Map{
+				// 	"detail": "Server is busy, please try again later",
+				// })
+				r.Response.WriteJson(gApiError("Server is busy, please try again later", gerror.New("openai_hk_error")))
 				return
 			}
 
 			email = emailPop
 		}
+		emailPop2 = email
+		patternStr := `\[(\d+)\]`
+		email, err = gregex.ReplaceString(patternStr, "", email)
+		if err != nil {
+			return
+		}
+
 	} else {
 		emailPop, ok := config.NormalSet.Pop()
 		if !ok {
 			g.Log().Error(ctx, "Get email from set error")
 			r.Response.Status = 500
-			r.Response.WriteJson(g.Map{
-				"detail": "Server is busy, please try again later",
-			})
+			// r.Response.WriteJson(g.Map{
+			// 	"detail": "Server is busy, please try again later",
+			// })
+			r.Response.WriteJson(gApiError("Server is busy, please try again later", gerror.New("openai_hk_error")))
 			return
 		}
 		defer func() {
@@ -436,18 +459,24 @@ func Completions(r *ghttp.Request) {
 		}()
 
 		email = emailPop
+		emailPop2 = emailPop
 	}
 	if email == "" {
 		g.Log().Error(ctx, "Get email from set error")
 		r.Response.Status = 500
-		r.Response.WriteJson(g.Map{
-			"detail": "Server is busy, please try again later",
-		})
+		// r.Response.WriteJson(g.Map{
+		// 	"detail": "Server is busy, please try again later",
+		// })
+		r.Response.WriteJson(gApiError("Server is busy, please try again later", gerror.New("openai_hk_error")))
 		return
 	}
 	realModel := ChatReq.Get("model").String()
 	//g.Log().Info(ctx, userToken, "使用", email, req.Model, "->", realModel, "发起会话")
-	g.Log().Info(ctx, email, "发起会话", req.Model, "->", realModel)
+	if isPlusModel {
+		g.Log().Info(ctx, email, "发起", config.PlusSet.Size(), req.Model, "->", realModel)
+	} else {
+		g.Log().Info(ctx, email, "发起", config.NormalSet.Size(), req.Model, "->", realModel)
+	}
 
 	// 使用email获取 accessToken
 	var sessionCache *config.CacheSession
@@ -461,12 +490,37 @@ func Completions(r *ghttp.Request) {
 
 		go backendapi.RefreshSession(email)
 		r.Response.Status = 401
-		r.Response.WriteJson(g.Map{
-			"detail": "accessToken is invalid,will be refresh",
-		})
+		// r.Response.WriteJson(g.Map{
+		// 	"detail": "accessToken is invalid,will be refresh",
+		// })
+		r.Response.WriteJsonExit(gApiError("accessToken is invalid,will be refresh", gerror.New("openai_hk_error")))
 		return
 	}
 	ChatReq.Set("messages.0.content.parts.0", newMessages)
+	if !gfile.Exists("./temp") {
+		err := gfile.Mkdir("./temp")
+		if err != nil {
+			r.Response.Status = 400
+			r.Response.WriteJsonExit(gApiError("create temp dir failed ", gerror.New("openai_hk_error")))
+		}
+	}
+	//文件下载+上传
+	if gstr.Count(newMessages, "http") > 0 && (req.Model == "gpt-4-all") {
+		ChatReq, newMessages, err = gpt4all(ctx, newMessages, accessToken)
+		if err != nil {
+			r.Response.Status = 428
+			r.Response.WriteJsonExit(gApiError("file download error", err))
+		}
+	} else if gstr.Count(newMessages, "http") > 0 && gstr.HasPrefix(req.Model, "gpt-4-gizmo-") {
+
+		ChatReq, err = gpt4miz(ctx, newMessages, accessToken, ChatReq)
+		if err != nil {
+			r.Response.Status = 428
+			r.Response.WriteJsonExit(gApiError("file download error", err))
+		}
+
+	}
+
 	ChatReq.Set("messages.0.id", uuid.NewString())
 	ChatReq.Set("parent_message_id", uuid.NewString())
 
@@ -475,6 +529,7 @@ func Completions(r *ghttp.Request) {
 	}
 	ChatReq.Set("history_and_training_disabled", true)
 
+	//最后的调试
 	//ChatReq.Dump()
 	// 请求openai
 	resp, err := g.Client().SetHeaderMap(g.MapStrStr{
@@ -485,7 +540,8 @@ func Completions(r *ghttp.Request) {
 	if err != nil {
 		g.Log().Error(ctx, "g.Client().Post error: ", err)
 		r.Response.Status = 500
-		r.Response.WriteJson(gjson.New(`{"detail": "internal server error"}`))
+		//r.Response.WriteJson(gjson.New(`{"detail": "internal server error"}`))
+		r.Response.WriteJson(gApiError("internal server error", gerror.New("openai_hk_error")))
 		return
 	}
 	defer resp.Close()
@@ -502,17 +558,19 @@ func Completions(r *ghttp.Request) {
 
 		clears_in = gjson.New(resStr).Get("detail.clears_in").Int()
 
+		//延迟规划
 		if clears_in > 0 {
-			g.Log().Error(ctx, email, "resp.StatusCode==430", resStr)
+			g.Log().Error(ctx, email, "resp.StatusCode==430", clears_in, resStr)
 
 			//r.Response.WriteStatusExit(430, resStr)
-			r.Response.WriteStatusExit(430, `{ "detail": "try again" ,"StatusCode":430 }`)
+			//r.Response.WriteStatusExit(430, `{ "detail": "try again" ,"StatusCode":430 }`)
+			r.Response.Status = 430
+			r.Response.WriteJsonExit(gApiError("try again", gerror.New("openai_hk_error")))
 			return
 		} else {
 			g.Log().Error(ctx, email, "resp.StatusCode==429", resStr)
-
-			//r.Response.WriteStatusExit(429, resStr)
-			r.Response.WriteStatusExit(429, `{ "detail": "try again" ,"StatusCode":429 }`)
+			r.Response.Status = 429
+			r.Response.WriteJsonExit(gApiError("try again", gerror.New("openai_hk_error")))
 			return
 		}
 	}
@@ -521,17 +579,21 @@ func Completions(r *ghttp.Request) {
 		allString := resp.ReadAllString()
 		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode, gstr.SubStr(gstr.Replace(allString, "\n", "="), 0, 100))
 		r.Response.Status = resp.StatusCode
-		aJson := gjson.New(allString)
+		//aJson := gjson.New(allString)
 		msg := "请求发生错误！ 请重试"
 		if resp.StatusCode == 404 {
 			msg = "未找到这个模型"
 		}
-		aJson.Set("error", msg)
-		aJson.Set("StatusCode", resp.StatusCode)
-		if gstr.HasPrefix(aJson.Get("detail").String(), "help") {
-			aJson.Set("detail", "")
+		if resp.StatusCode == 413 {
+			msg = "内容过长，请新建一个聊天"
 		}
-		r.Response.WriteJsonExit(aJson)
+		//aJson.Set("error", msg)
+		//aJson.Set("StatusCode", resp.StatusCode)
+		// if gstr.HasPrefix(aJson.Get("detail").String(), "help") {
+		// 	aJson.Set("detail", "")
+
+		// }
+		r.Response.WriteJsonExit(gApiError(msg, gerror.New("openai_hk_error")))
 		//r.Response.WriteJson(gjson.New(allString))
 		return
 	}
@@ -550,6 +612,7 @@ func Completions(r *ghttp.Request) {
 		codeMsg := ""
 		message := ""
 		decoder := eventsource.NewDecoder(resp.Body)
+
 		defer decoder.Decode()
 
 		id := config.GenerateID(29)
@@ -559,7 +622,11 @@ func Completions(r *ghttp.Request) {
 				// if err == io.EOF {
 				// 	break
 				// }
-				// g.Log().Info(ctx, "释放资源")
+
+				if icount == 0 {
+					//r.Response.WriteJson(gApiError("错误 请重试", gerror.New("try again!")))
+					g.Log().Info(ctx, "释放资源", icount, email)
+				}
 				break
 			}
 			text := event.Data()
@@ -585,11 +652,13 @@ func Completions(r *ghttp.Request) {
 			if role == "tool" {
 				//code 结束的地方
 				if codeMsg != "" {
+					icount++
 					toStream(ctx, id, "\n```\n", req, r)
 					codeMsg = ""
 				}
 				toolStr := myFileTool(ctx, text, accessToken)
 				if toolStr != "" {
+					icount++
 					toStream(ctx, id, "\n"+toolStr+"\n", req, r)
 				}
 			}
@@ -612,6 +681,7 @@ func Completions(r *ghttp.Request) {
 							if language == "unknown" {
 								language = ""
 							}
+							icount++
 							toStream(ctx, id, "\n```"+language+"\n", req, r)
 						}
 						content := strings.Replace(msgCode2, codeMsg, "", 1)
@@ -622,6 +692,7 @@ func Completions(r *ghttp.Request) {
 				}
 				//code 结束的地方
 				if codeMsg != "" {
+					icount++
 					toStream(ctx, id, "\n```\n", req, r)
 					codeMsg = ""
 				}
@@ -658,6 +729,7 @@ func Completions(r *ghttp.Request) {
 					fmt.Println("转换JSON出错:", err)
 					continue
 				}
+				icount++
 				r.Response.Writeln("data: " + string(sortJson) + "\n\n")
 				r.Response.Flush()
 			}
@@ -669,7 +741,7 @@ func Completions(r *ghttp.Request) {
 			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "PLUS失效")
 		} else {
 			//g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "完成会话")
-			g.Log().Info(ctx, email, "完成会话", realModel, "->", modelSlug)
+			g.Log().Info(ctx, email, "完成会话", icount, realModel, "->", modelSlug)
 		}
 
 	} else {
@@ -755,13 +827,21 @@ func Completions(r *ghttp.Request) {
 		apiResp.Set("usage.prompt_tokens", promptTokens)
 		apiResp.Set("usage.completion_tokens", completionTokens)
 		apiResp.Set("usage.total_tokens", totalTokens)
-		r.Response.WriteJson(apiResp)
+
+		if completionTokens > 0 {
+			r.Response.WriteJson(apiResp)
+		} else {
+			g.Log().Info(ctx, "[非流]出错会话", email, realModel, "->", modelSlug)
+			r.Response.Status = 501
+			r.Response.WriteJson(gApiError("请重试", gerror.New("wss error")))
+		}
+
 		if realModel != "text-davinci-002-render-sha" && modelSlug == "text-davinci-002-render-sha" {
 			isPlusInvalid = true
 
-			g.Log().Info(ctx, userToken, "使用", email, realModel, "->", modelSlug, "PLUS失效")
+			g.Log().Info(ctx, userToken, "使用", email, icount, realModel, "->", modelSlug, "PLUS失效")
 		} else {
-			g.Log().Info(ctx, "[非流]完成会话", email, realModel, "->", modelSlug)
+			g.Log().Info(ctx, "[非流]完成会话", email, completionTokens, realModel, "->", modelSlug)
 		}
 	}
 
