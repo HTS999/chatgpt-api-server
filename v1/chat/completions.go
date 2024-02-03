@@ -479,7 +479,7 @@ func Completions(r *ghttp.Request) {
 	}
 
 	// 使用email获取 accessToken
-	var sessionCache *config.CacheSession
+	sessionCache := &config.CacheSession{}
 	cool.CacheManager.MustGet(ctx, "session:"+email).Scan(&sessionCache)
 	accessToken := sessionCache.AccessToken
 	err = utility.CheckAccessToken(accessToken)
