@@ -273,6 +273,10 @@ func downloadFile(ctx g.Ctx, urlString string) (outputPath string, fileType stri
 	}
 	defer response.Body.Close()
 
+	if outputPath == "" || outputPath == "/" {
+		outputPath = config.GenerateID(7) + ".html"
+	}
+
 	file, err := os.Create("./temp/" + outputPath)
 	if err != nil {
 		return
@@ -439,5 +443,19 @@ func uploadFileCheck(ctx g.Ctx, token string, file_id string) (file_size_tokens 
 		return
 	}
 
+	return
+}
+
+func isChatGPtUrl(newMessages string) (isChat bool) {
+	count := gstr.Count(newMessages, "http")
+	isChat = false
+	if count == 0 {
+		return
+	}
+	count = gstr.Count(newMessages, "oaiusercontent")
+	if count > 0 {
+		isChat = true
+		return
+	}
 	return
 }

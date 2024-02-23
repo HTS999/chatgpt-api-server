@@ -218,27 +218,52 @@ var (
 		"force_paragen": false,
 		"force_rate_limit": false
 	}`
-	ApiRespStr = `{
-		"id": "chatcmpl-LLKfuOEHqVW2AtHks7wAekyrnPAoj",
+	// ApiRespStr = `{
+	// 	"id": "chatcmpl-LLKfuOEHqVW2AtHks7wAekyrnPAoj",
+	// 	"object": "chat.completion",
+	// 	"created": 1689864805,
+	// 	"model": "gpt-3.5-turbo",
+	// 	"usage": {
+	// 		"prompt_tokens": 0,
+	// 		"completion_tokens": 0,
+	// 		"total_tokens": 0
+	// 	},
+	// 	"choices": [
+	// 		{
+	// 			"message": {
+	// 				"role": "assistant",
+	// 				"content": "Hello! How can I assist you today?"
+	// 			},
+	// 			"finish_reason": "stop",
+	// 			"index": 0
+	// 		}
+	// 	]
+	// }`
+	ApiRespStr = `
+	{
+		"id": "chatcmpl-8o0Mzvxk0oFtY8r7ImkUv4n2eyspT",
 		"object": "chat.completion",
-		"created": 1689864805,
-		"model": "gpt-3.5-turbo",
-		"usage": {
-			"prompt_tokens": 0,
-			"completion_tokens": 0,
-			"total_tokens": 0
-		},
+		"created": 1706928513,
+		"model": "gpt-3.5-turbo-1106",
 		"choices": [
 			{
+				"index": 0,
 				"message": {
 					"role": "assistant",
-					"content": "Hello! How can I assist you today?"
-				},
-				"finish_reason": "stop",
-				"index": 0
+					"content": "1"
+					},
+				"logprobs": null,
+				"finish_reason": "stop"
 			}
-		]
-	}`
+		],
+		"usage": {
+			"prompt_tokens": 164,
+			"completion_tokens": 1,
+			"total_tokens": 165
+		},
+		"system_fingerprint": "fp_04f9a1eebf"
+	}
+`
 	ApiRespStrStream = `{
 		"id": "chatcmpl-afUFyvbTa7259yNeDqaHRBQxH2PLH",
 		"object": "chat.completion.chunk",
@@ -332,8 +357,16 @@ func Completions(r *ghttp.Request) {
 	for _, message := range req.Messages {
 		newMessages += message.Content + "\n"
 	}
+	//字符串别大于 4096
+	mxlen := 8192
+	startIndex := 0
+	if len(newMessages) > mxlen {
+		g.Log().Info(ctx, "消息已超过最长处理： ", mxlen, len(newMessages))
+		startIndex = len(newMessages) - mxlen
+	}
+	newMessages = newMessages[startIndex:]
 	// g.Dump(newMessages)
-	//g.Log().Info(ctx, "model", req.Model)
+	// g.Log().Info(ctx, "model", req.Model)
 	var ChatReq *gjson.Json
 	if gstr.HasPrefix(req.Model, "gpt-4") {
 		ChatReq = gjson.New(Chat4ReqStr)
@@ -361,7 +394,7 @@ func Completions(r *ghttp.Request) {
 
 	// 如果不是plus用户但是使用了plus模型
 	if !isPlusUser && gstr.HasPrefix(req.Model, "gpt-4") {
-		r.Response.Status = 501
+		r.Response.Status = 500
 		// r.Response.WriteJson(g.Map{
 		// 	"detail": "plus user only",
 		// })
@@ -489,34 +522,44 @@ func Completions(r *ghttp.Request) {
 		cool.DBM(model.NewChatgptSession()).Where("email", email).Update(g.Map{"status": 0})
 
 		go backendapi.RefreshSession(email)
-		r.Response.Status = 401
+		r.Response.Status = 428
 		// r.Response.WriteJson(g.Map{
 		// 	"detail": "accessToken is invalid,will be refresh",
 		// })
-		r.Response.WriteJsonExit(gApiError("accessToken is invalid,will be refresh", gerror.New("openai_hk_error")))
+		r.Response.WriteJsonExit(gApiError("please try again", gerror.New("openai_hk_error")))
 		return
 	}
 	ChatReq.Set("messages.0.content.parts.0", newMessages)
 	if !gfile.Exists("./temp") {
 		err := gfile.Mkdir("./temp")
 		if err != nil {
-			r.Response.Status = 400
+			r.Response.Status = 428
 			r.Response.WriteJsonExit(gApiError("create temp dir failed ", gerror.New("openai_hk_error")))
 		}
 	}
-	//文件下载+上传
-	if gstr.Count(newMessages, "http") > 0 && (req.Model == "gpt-4-all") {
+	isChat := isChatGPtUrl(newMessages)
+	if isChat {
+		g.Log().Info(ctx, "含有 ChatGPT url ")
+	} else if gstr.Count(newMessages, "http") > 0 && (req.Model == "gpt-4-all") { //文件下载+上传
+
 		ChatReq, newMessages, err = gpt4all(ctx, newMessages, accessToken)
 		if err != nil {
 			r.Response.Status = 428
+			g.Log().Error(ctx, "图片下载错误", err)
 			r.Response.WriteJsonExit(gApiError("file download error", err))
 		}
 	} else if gstr.Count(newMessages, "http") > 0 && gstr.HasPrefix(req.Model, "gpt-4-gizmo-") {
+		//g.Log().Info(ctx, "gizmo", gstr.Replace(req.Model, "gpt-4-gizmo-", ""))
+		gid := gstr.Replace(req.Model, "gpt-4-gizmo-", "")
 
-		ChatReq, err = gpt4miz(ctx, newMessages, accessToken, ChatReq)
-		if err != nil {
-			r.Response.Status = 428
-			r.Response.WriteJsonExit(gApiError("file download error", err))
+		//本来就是画图 就不去传图了
+		if gid != "g-2fkFE8rbu" {
+			ChatReq, err = gpt4miz(ctx, newMessages, accessToken, ChatReq)
+			if err != nil {
+				r.Response.Status = 428
+				g.Log().Error(ctx, "图片下载错误", err)
+				r.Response.WriteJsonExit(gApiError("file download error", err))
+			}
 		}
 
 	}
@@ -578,7 +621,7 @@ func Completions(r *ghttp.Request) {
 	if resp.StatusCode != 200 {
 		allString := resp.ReadAllString()
 		g.Log().Error(ctx, "resp.StatusCode: ", resp.StatusCode, gstr.SubStr(gstr.Replace(allString, "\n", "="), 0, 100))
-		r.Response.Status = resp.StatusCode
+		r.Response.Status = 428 //resp.StatusCode
 		//aJson := gjson.New(allString)
 		msg := "请求发生错误！ 请重试"
 		if resp.StatusCode == 404 {
@@ -586,6 +629,7 @@ func Completions(r *ghttp.Request) {
 		}
 		if resp.StatusCode == 413 {
 			msg = "内容过长，请新建一个聊天"
+			g.Log().Info(ctx, len(msg), msg)
 		}
 		//aJson.Set("error", msg)
 		//aJson.Set("StatusCode", resp.StatusCode)
