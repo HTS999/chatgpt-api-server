@@ -26,3 +26,8 @@ USERTOKENLOCK: true
 # 3.5模型是否免费
 ISFREE: true
 ```
+## 调试
+先在host里面增加下myql redis
+```shell
+gf run main.go
+```
